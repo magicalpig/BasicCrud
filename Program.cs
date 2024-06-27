@@ -11,7 +11,12 @@ builder.Services.AddEndpointsApiExplorer()
         opt.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"));
     })
     .AddAutoMapper(typeof(AutoMapperProfiles).Assembly)
-    .AddControllers();
+    .AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // allows enum values to come in as strings in requests
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 
 
 
