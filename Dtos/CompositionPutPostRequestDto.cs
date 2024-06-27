@@ -1,13 +1,16 @@
 using System.ComponentModel.DataAnnotations;
-using BasicCrud.Enums;
 
 namespace BasicCrud.Dtos;
 
 //  Just like the base class except all fields are required
 public class CompositionPutPostRequestDto : CompositionRequestDto, IValidatableObject
 {
-    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    public override IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        foreach (var result in base.Validate(validationContext))
+        {
+            yield return result;
+        }
         if (KeySignature == null)
         {
             yield return new ValidationResult("Key signature is required", [nameof(KeySignature)]);
@@ -20,12 +23,12 @@ public class CompositionPutPostRequestDto : CompositionRequestDto, IValidatableO
 
         if (Format == null)
         {
-            yield return new ValidationResult("Format is required",  [nameof(Format)]);
+            yield return new ValidationResult("Format is required", [nameof(Format)]);
         }
 
         if (string.IsNullOrWhiteSpace(ComposerName) && ComposerId == null)
         {
-            yield return new ValidationResult("Composer name or id is required",[nameof(ComposerName), nameof(ComposerId)]);
+            yield return new ValidationResult("Composer name or id is required", [nameof(ComposerName), nameof(ComposerId)]);
         }
     }
 }

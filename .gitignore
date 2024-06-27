@@ -1,3 +1,4 @@
 /.editorconfig
 /bin
 /obj
+compositions.db-wal

@@ -112,9 +112,9 @@ public class CompositionController(DataContext context, IMapper mapper) : Contro
         var existing = await _context.Compositions.FindAsync(id);
         if (existing is null)
             return NotFound();
+        await _context.Entry(existing).Reference(x => x.Composer).LoadAsync();
 
-        Composer? composerReference = null;
-        
+        Composer composerReference;
         if (composition.ComposerId is not null)
         {
             var composer = await _context.Composers.FindAsync(composition.ComposerId);
@@ -136,23 +136,24 @@ public class CompositionController(DataContext context, IMapper mapper) : Contro
                 composerReference = newComposer;
             }
         }
+        else
+        {
+            composerReference = existing.Composer;
+        }
 
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
             // the composer is new. it needs to be committed.
-            if (composerReference is not null && 
-                _context.Entry<Composer>(composerReference).State == EntityState.Added)
+            if (_context.Entry<Composer>(composerReference).State == EntityState.Added)
             {
                 await _context.SaveChangesAsync();
             }            
             
             var modified = _mapper.Map<CompositionPatchRequestDto, Composition>(composition, existing);
+            modified.Composer = composerReference;
 
-            if (composerReference is not null && composerReference.Id != modified.Composer.Id)
-                modified.Composer = composerReference;
-
-            
+            Composition toReturn;
             if (_context.Entry(modified).State == EntityState.Modified)
             {
                 var successfulUpdate = await _context.SaveChangesAsync() > 0;
@@ -160,9 +161,7 @@ public class CompositionController(DataContext context, IMapper mapper) : Contro
                 if (successfulUpdate)
                 {
                     await transaction.CommitAsync();
-                    
-                    var response = _mapper.Map<Composition, CompositionResponseDto>(modified);
-                    return Ok(response);                  
+                    toReturn = modified;
                 }
                 else
                 {
@@ -170,12 +169,13 @@ public class CompositionController(DataContext context, IMapper mapper) : Contro
                     return BadRequest("Failed to update composition");
                 }                        
             }
-            else
+            else // return existing as-is
             {
-                return Ok("No modifications found for the composition");
+                toReturn = existing;
             }
-
-            //TODO might want to address case wher user reassigns a composer's last composition. This could be implemented in db context.
+            
+             
+            return Ok(_mapper.Map<Composition, CompositionResponseDto>(toReturn));
         }
         catch (Exception e)
         {
@@ -188,7 +188,6 @@ public class CompositionController(DataContext context, IMapper mapper) : Contro
     public async Task<ActionResult<CompositionResponseDto>> PostComposition([FromBody] CompositionPutPostRequestDto composition)
     {
         Composer composerReference;
-        
         if (composition.ComposerId is not null)
         {
             var composer = await _context.Composers.FindAsync(composition.ComposerId);
