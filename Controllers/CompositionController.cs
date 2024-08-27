@@ -21,9 +21,8 @@ public class CompositionController(DataContext context, IMapper mapper) : Contro
     [HttpGet]
     public async Task<ActionResult<List<CompositionResponseDto>>> GetCompositions([FromQuery] CompositionQueryParameters? queryParameters)
     {
-        var query = _context.Compositions
-            .Include(c => c.Composer)
-            .AsQueryable();
+        IQueryable<Composition> query = _context.Compositions
+            .Include(c => c.Composer); // explicit typing otherwise we have IIncludableQueryable
 
         if (queryParameters is not null)
         {
@@ -60,7 +59,6 @@ public class CompositionController(DataContext context, IMapper mapper) : Contro
             {
                 query = query.Where(c => c.Format == queryParameters.Format);
             }
-            //TODO provide a way to allow the text of a Format (e.g. "Sonata") to be used as a filter
 
             // Composer name
             if (!string.IsNullOrWhiteSpace(queryParameters.ComposerName))
@@ -82,7 +80,7 @@ public class CompositionController(DataContext context, IMapper mapper) : Contro
 
     [HttpGet]
     [Route("{id:Guid}")]
-    public async Task<ActionResult<Composition>> GetComposition(Guid id)
+    public async Task<ActionResult<CompositionResponseDto>> GetComposition(Guid id)
     {
         var compResponse = await _context.Compositions
             .Where(c => c.Id == id)

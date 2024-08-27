@@ -1,4 +1,3 @@
-using BasicCrud.Enums;
 using BasicCrud.Models;
 using Microsoft.EntityFrameworkCore;
 
