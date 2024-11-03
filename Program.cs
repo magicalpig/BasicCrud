@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using BasicCrud.Persistence;
 using BasicCrud.Dtos;
+using BasicCrud.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,7 +17,8 @@ builder.Services.AddEndpointsApiExplorer()
     {
         // allows enum values to come in as strings in requests
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
-    });
+    })
+    .Services.AddScoped<CompositionService>();
 
 
 
@@ -31,7 +33,8 @@ if (app.Environment.IsDevelopment())
 app.MapControllers();
 
 
-// stand up the database and seed it
+// stand up the database and seed it.
+// Manually creating a scope b/c this code runs on startup, not
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;

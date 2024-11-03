@@ -3,3 +3,4 @@
 /obj
 compositions.db-wal
 compositions.db
+compositions.db-shm

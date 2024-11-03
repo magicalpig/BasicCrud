@@ -7,253 +7,97 @@ using BasicCrud.Enums;
 using BasicCrud.Enums.Helpers;
 using AutoMapper;
 using AutoMapper.QueryableExtensions;
+using BasicCrud.Services;
 
 
 namespace BasicCrud.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class CompositionController(DataContext context, IMapper mapper) : ControllerBase
+public class CompositionController(CompositionService compositionService, DataContext context, IMapper mapper) : ControllerBase
 {
     private readonly DataContext _context = context;
     private readonly IMapper _mapper = mapper;
+    private readonly CompositionService _compositionService = compositionService;
 
     [HttpGet]
     public async Task<ActionResult<List<CompositionResponseDto>>> GetCompositions([FromQuery] CompositionQueryParameters? queryParameters)
     {
-        IQueryable<Composition> query = _context.Compositions
-            .Include(c => c.Composer); // explicit typing otherwise we have IIncludableQueryable
-
-        if (queryParameters is not null)
+        try 
         {
-            // Name of composition
-            if (!string.IsNullOrWhiteSpace(queryParameters.Name))
-            {
-                query = query.Where(c => EF.Functions.Like(c.Name, $"%{queryParameters.Name}%"));
-            }
-
-            // Key Signature as integer
-            if (queryParameters.KeySignature is not null)
-            {
-                query = query.Where(c => c.KeySignature == queryParameters.KeySignature);
-            }
-
-            // Key Signature as display name string
-            if (!string.IsNullOrWhiteSpace(queryParameters.KeySignatureDisplayName))
-            {
-                int? keyCode = DisplayNameHelper
-                    .GetEnumValueFromDisplayName<KeySignature>(queryParameters.KeySignatureDisplayName);
-
-                if (keyCode is null)
-                {
-                    return BadRequest("Unknown value provided for KeySignatureDisplayName filter.");
-                }
-                else
-                {
-                    query = query.Where(c => c.KeySignature == (KeySignature)keyCode);
-                }
-            }
-
-            // Format as integer
-            if (queryParameters.Format is not null)
-            {
-                query = query.Where(c => c.Format == queryParameters.Format);
-            }
-
-            // Composer name
-            if (!string.IsNullOrWhiteSpace(queryParameters.ComposerName))
-            {
-                query = query.Where(c => EF.Functions.Like(c.Composer.Name, $"%{queryParameters.ComposerName}%"));
-            }
+            var comps = await _compositionService.GetCompositionsAsync(queryParameters);
+            if (comps is null) return NotFound();
+            return Ok(_mapper.Map<List<Composition>, List<CompositionResponseDto>>(comps));
         }
-
-        var comps = await query
-            .ProjectTo<CompositionResponseDto>(_mapper.ConfigurationProvider)
-            .ToListAsync();
-
-        if (comps is null)
+        catch (ArgumentException ex)
         {
-            return NotFound();
+            return BadRequest(ex.Message);
         }
-        return Ok(comps);
     }
 
     [HttpGet]
     [Route("{id:Guid}")]
     public async Task<ActionResult<CompositionResponseDto>> GetComposition(Guid id)
     {
-        var compResponse = await _context.Compositions
-            .Where(c => c.Id == id)
-            .ProjectTo<CompositionResponseDto>(_mapper.ConfigurationProvider)
-            .FirstOrDefaultAsync();
+        var compResponse = await _compositionService.GetCompositionAsync(id);
         if (compResponse is null)
             return NotFound();
-        return Ok(compResponse);
+        return Ok(_mapper.Map<Composition, CompositionResponseDto>(compResponse));        
     }
 
     [HttpDelete]
     [Route("{id:Guid}")]
     public async Task<IActionResult> DeleteComposition(Guid id)
     {
-        var comp = await _context.Compositions.FindAsync(id);
-        if (comp is null)
-            return NotFound();
-        _context.Compositions.Remove(comp);
-        await _context.SaveChangesAsync();
-        return NoContent();
+        return await _compositionService.DeleteCompositionAsync(id) ? NoContent() : NotFound();
     }
 
     [HttpPatch]
     [Route("{id:Guid}")]
-    public async Task<IActionResult> PatchComposition([FromRoute] Guid id, [FromBody] CompositionPatchRequestDto composition)
+    public async Task<IActionResult> PatchComposition([FromRoute] Guid id, [FromBody] CompositionPatchRequestDto compositionPatchRequestDto)
     {
-        var existing = await _context.Compositions.FindAsync(id);
-        if (existing is null)
-            return NotFound();
-        await _context.Entry(existing).Reference(x => x.Composer).LoadAsync();
-
-        Composer composerReference;
-        if (composition.ComposerId is not null)
-        {
-            var composer = await _context.Composers.FindAsync(composition.ComposerId);
-            if (composer is null)
-                return BadRequest("Composer not found for the provided id");
-            composerReference = composer;
-        }
-        // Composer was passed by name instead of by guid
-        else if (!string.IsNullOrWhiteSpace(composition.ComposerName))
-        {
-            var existingComposer = await _context.Composers.FirstOrDefaultAsync(c => c.Name == composition.ComposerName);
-            if (existingComposer is not null)
-                composerReference = existingComposer;
-            else
-            {
-                var newComposer = new Composer { Name = composition.ComposerName };
-                _context.Composers.Add(newComposer);
-                
-                composerReference = newComposer;
-            }
-        }
-        else
-        {
-            composerReference = existing.Composer;
-        }
-
-        using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            // the composer is new. it needs to be committed.
-            if (_context.Entry<Composer>(composerReference).State == EntityState.Added)
+            Composition? existingComposition = await _compositionService.GetCompositionAsync(id);
+            if (existingComposition is null)
             {
-                await _context.SaveChangesAsync();
-            }            
-            
-            var modified = _mapper.Map<CompositionPatchRequestDto, Composition>(composition, existing);
-            modified.Composer = composerReference;
-
-            Composition toReturn;
-            if (_context.Entry(modified).State == EntityState.Modified)
-            {
-                var successfulUpdate = await _context.SaveChangesAsync() > 0;
-
-                if (successfulUpdate)
-                {
-                    await transaction.CommitAsync();
-                    toReturn = modified;
-                }
-                else
-                {
-                    await transaction.RollbackAsync();
-                    return BadRequest("Failed to update composition");
-                }                        
+                return NotFound("Composition not found");
             }
-            else // return existing as-is
-            {
-                toReturn = existing;
-            }
-            
-             
-            return Ok(_mapper.Map<Composition, CompositionResponseDto>(toReturn));
+            // this will map only the non-null properties from the request DTO to the existing composition
+            var mergedComposition = _mapper.Map<CompositionPatchRequestDto, Composition>(compositionPatchRequestDto, existingComposition);
+
+            Composition updatedComposition = await _compositionService.UpdateCompositionAsync(
+                mergedComposition,
+                compositionPatchRequestDto.ComposerId,
+                compositionPatchRequestDto.ComposerName
+            );
+            return Ok(_mapper.Map<Composition, CompositionResponseDto>(updatedComposition));
         }
-        catch (Exception e)
+        catch (KeyNotFoundException ex)
         {
-            await transaction.RollbackAsync();
-            return BadRequest(e.Message);
+            return NotFound(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ex.Message);
         }
     }
-
+   
     [HttpPost]
     public async Task<ActionResult<CompositionResponseDto>> PostComposition([FromBody] CompositionPutPostRequestDto composition)
     {
-        Composer composerReference;
-        if (composition.ComposerId is not null)
-        {
-            var composer = await _context.Composers.FindAsync(composition.ComposerId);
-            if (composer is null)
-                return BadRequest("Composer not found for the provided id");
-            composerReference = composer;
-        }
-        // Composer was passed by name instead of by guid
-        else if (!string.IsNullOrWhiteSpace(composition.ComposerName))
-        {
-            var existingComposer = await _context.Composers.FirstOrDefaultAsync(c => c.Name == composition.ComposerName);
-            if (existingComposer is not null)
-                composerReference = existingComposer;
-            else
-            {
-                var newComposer = new Composer { Name = composition.ComposerName };
-                _context.Composers.Add(newComposer);
-                
-                composerReference = newComposer;
-            }
-        }
-        else // this case should have been caught by validators directly on the DTO properties
-        {
-            return BadRequest("Composer name or id is required");
-        }
-        
-        var existingRecord = await _context.Compositions
-            .AnyAsync(c => c.Name == composition.Name 
-                        && c.KeySignature == composition.KeySignature 
-                        && c.Composer.Id == composerReference.Id);
-        if (existingRecord)
-        {
-            return Conflict("A Composition with the same Name, KeySignature, and Composer already exists.");
-        }
-
-
-        using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            // the composer is new. it needs to be committed.
-            if (_context.Entry<Composer>(composerReference).State == EntityState.Added)
-            {
-                await _context.SaveChangesAsync();
-            }            
-            
-            Composition newRecord = _mapper.Map<CompositionPutPostRequestDto, Composition>(composition);
-            newRecord.Composer = composerReference;
-            _context.Compositions.Add(newRecord);
-                            
-            var successfulInsert = await _context.SaveChangesAsync() > 0;
-            if (successfulInsert)
-            {
-                await transaction.CommitAsync();
-                
-                var response = _mapper.Map<Composition, CompositionResponseDto>(newRecord);
-                return Ok(response);                  
-            }
-            else
-            {
-                await transaction.RollbackAsync();
-                return BadRequest("Failed to insert composition");
-            }                        
-
+            Composition insertedComposition = await _compositionService.CreateCompositionAsync(_mapper.Map<Composition>(composition), composition.ComposerId, composition.ComposerName);
+            return Ok(_mapper.Map<Composition, CompositionResponseDto>(insertedComposition));
         }
-        catch (Exception e)
+        catch (ArgumentException ex)
         {
-            await transaction.RollbackAsync();
-            return BadRequest(e.Message);
+            return BadRequest(ex.Message);
         }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ex.Message);
+        }        
     }
 }

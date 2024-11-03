@@ -29,10 +29,10 @@ public abstract class CompositionRequestDto : IValidatableObject
         {
             _keySignatureDisplayName = value;
             // Automatically update KeySignature when KeySignatureDisplayName is set
-            if (_keySignatureDisplayName != null)
+            if (!string.IsNullOrWhiteSpace(_keySignatureDisplayName))
             {
                 int? keyCode = DisplayNameHelper.GetEnumValueFromDisplayName<KeySignature>(_keySignatureDisplayName);
-                if (keyCode != null && Enum.IsDefined(typeof(KeySignature), keyCode))
+                if (keyCode.HasValue)
                 {
                     KeySignature = (KeySignature)keyCode;
                 }

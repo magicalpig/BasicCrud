@@ -31,7 +31,3 @@ Once the project is running, you can perform CRUD operations against the followi
 - `POST /api/Composition`: Create a new composition, possibly introducing a new composer. The request body needs to be JSON.
 - `PATCH /api/Composition/{id}`: Update an existing item sending only those fields that need to be updated. The request body needs to be JSON.
 - `DELETE /api/Composition/{id}`: Delete a specific composition by its ID.
-
-## Future Ideas
-- make controller lighter: right now the controller is doing too much. It should be refactored to delegate more work to services or possibly use MediatR
-- 
