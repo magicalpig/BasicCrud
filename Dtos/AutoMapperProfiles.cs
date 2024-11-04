@@ -10,19 +10,29 @@ public class AutoMapperProfiles : Profile
     {
         CreateMap<Composition, CompositionResponseDto>()
             .ForMember(d => d.KeySignatureDisplayName,
-                o => o.MapFrom(s => DisplayNameHelper.GetDisplayName(s.KeySignature)))
+                o => o.MapFrom(s => s.KeySignature != null 
+                    ?   DisplayNameHelper.GetDisplayName(s.KeySignature)
+                    : "Unknown"))
             .ForMember(d => d.ComposerName,
                 o => o.MapFrom(s => s.Composer.Name));
 
-        // For the Format and KeySignature enum properties, the DTO can have null while the Composition cannot.
-        // This creates a problem where the null becomes a 0 which then gets mapped to the Composition.
-        // Using PreCondition to check if the value is null before mapping solves this problem.
         CreateMap<CompositionPatchRequestDto, Composition>()
-            .ForMember(dest => dest.Format, opt => opt.PreCondition(src => src.Format.HasValue))
-            .ForMember(dest => dest.KeySignature, opt => opt.PreCondition(src => src.KeySignature.HasValue))
-            .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null && !string.IsNullOrWhiteSpace(srcMember.ToString())))
-        ;
-        
+            .ForAllMembers(opts => opts.Condition((src, dest, srcMember) =>
+            {
+                // because Composition's NumberOfMovements is non-nullable, a null on the 
+                // source side (the DTO) will be converted to 0 by automapper.
+                // Prevent that 0 from being copied to destination Composition
+                if (opts.DestinationMember.Name == nameof(Composition.NumberOfMovements))
+                {
+                    int? numberOfMovements = (src as CompositionPatchRequestDto).NumberOfMovements;
+                    // Check if the source value has a value and is greater than 0
+                    return numberOfMovements.HasValue == true && numberOfMovements > 0;
+                }
+                return srcMember != null && !string.IsNullOrWhiteSpace(srcMember?.ToString());
+            }));
+
+
+
         // nothing is optional when converting from a Put or Post request DTO
         CreateMap<CompositionPutPostRequestDto, Composition>();
 

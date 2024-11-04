@@ -11,6 +11,5 @@ public enum Format
     Suite = 7,
     Nocturne = 8,
     Etude = 9,
-    Variations = 10,
-    Other = 11
+    Variations = 10
 }

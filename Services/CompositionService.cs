@@ -13,14 +13,30 @@ public class CompositionService(DataContext context, IMapper mapper)
 {
     private readonly DataContext _context = context;
     private readonly IMapper _mapper = mapper;
-    
+
+    private static void ValidateComposition(Composition composition)
+    {
+        if (composition.KeySignature == null)
+        {
+            throw new ArgumentException("KeySignature is required.");
+        }
+        else if (composition.NumberOfMovements < 1)
+        {
+            throw new ArgumentException("NumberOfMovements must be at least 1.");
+        }
+        else if (composition.Format == null)
+        {
+            throw new ArgumentException("Format is required.");
+        }
+    }
+
     public async Task<bool> DeleteCompositionAsync(Guid id)
     {
         var composition = await _context.Compositions.FindAsync(id);
         if (composition is null) return false;
         _context.Remove(composition);
         await _context.SaveChangesAsync();
-        return true;        
+        return true;
     }
 
     public async Task<Composition?> GetCompositionAsync(Guid id)
@@ -100,7 +116,7 @@ public class CompositionService(DataContext context, IMapper mapper)
             {
                 var newComposer = new Composer { Name = composerName };
                 _context.Composers.Add(newComposer);
-                
+
                 composerReference = newComposer;
             }
         }
@@ -108,16 +124,17 @@ public class CompositionService(DataContext context, IMapper mapper)
         {
             throw new ArgumentException("Composer name or id is required");
         }
-        
+
         var existingRecord = await _context.Compositions
-            .AnyAsync(c => c.Name == composition.Name 
-                        && c.KeySignature == composition.KeySignature 
+            .AnyAsync(c => c.Name == composition.Name
+                        && c.KeySignature == composition.KeySignature
                         && c.Composer.Id == composerReference.Id);
         if (existingRecord)
         {
             throw new InvalidOperationException("A Composition with the same Name, KeySignature, and Composer already exists.");
         }
 
+        ValidateComposition(composition);
 
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -126,22 +143,22 @@ public class CompositionService(DataContext context, IMapper mapper)
             if (_context.Entry<Composer>(composerReference).State == EntityState.Added)
             {
                 await _context.SaveChangesAsync();
-            }            
-            
+            }
+
             composition.Composer = composerReference;
             _context.Compositions.Add(composition);
-                            
+
             var successfulInsert = await _context.SaveChangesAsync() > 0;
             if (successfulInsert)
             {
                 await transaction.CommitAsync();
-                return composition;             
+                return composition;
             }
             else
             {
                 await transaction.RollbackAsync();
                 throw new InvalidOperationException("Failed to insert composition");
-            }                        
+            }
 
         }
         catch (Exception e)
@@ -155,7 +172,7 @@ public class CompositionService(DataContext context, IMapper mapper)
     {
         var existingId = composition.Id;
         var existingComposition = await _context.Compositions.FindAsync(existingId) ?? throw new KeyNotFoundException("Composition not found for the provided id");
-        
+
         await _context.Entry(existingComposition).Reference(x => x.Composer).LoadAsync();
 
         // if caller wants to change composer of the composition, it will pass in a composer guid or composer name
@@ -174,9 +191,11 @@ public class CompositionService(DataContext context, IMapper mapper)
             if (composerReference is null)
             {
                 composerReference = _context.Composers.Add(new Composer { Name = composerName }).Entity;
-            }           
+            }
         }
 
+        ValidateComposition(composition);
+        
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
@@ -184,8 +203,8 @@ public class CompositionService(DataContext context, IMapper mapper)
             if (_context.Entry<Composer>(composerReference).State == EntityState.Added)
             {
                 await _context.SaveChangesAsync();
-            }            
-            
+            }
+
             // only the "existing" object is being tracked by the context, so that's the one to use in db operations.
             // copy any changes from the incoming object to the tracked object.
             _mapper.Map(composition, existingComposition);
@@ -203,7 +222,7 @@ public class CompositionService(DataContext context, IMapper mapper)
                 {
                     await transaction.RollbackAsync();
                     throw new InvalidOperationException("Failed to update composition or insert new composer");
-                }                        
+                }
             }
             return existingComposition;
         }

@@ -73,6 +73,10 @@ public class CompositionController(CompositionService compositionService, DataCo
             );
             return Ok(_mapper.Map<Composition, CompositionResponseDto>(updatedComposition));
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
         catch (KeyNotFoundException ex)
         {
             return NotFound(ex.Message);
